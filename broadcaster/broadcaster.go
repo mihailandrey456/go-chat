@@ -1,14 +1,14 @@
 package broadcaster
 
 import (
-	"fmt"
 	"andrewka/chat/client"
+	"fmt"
 )
 
 type Broadcaster struct {
-	Entering 	chan *client.Client
-	Leaving		chan *client.Client
-	Messages 	chan string
+	Entering chan *client.Client
+	Leaving  chan *client.Client
+	Messages chan string
 }
 
 func New() *Broadcaster {

@@ -3,10 +3,10 @@ package client
 type Addr string
 
 type Client struct {
-	Addr 		Addr
-	name 		string
-	InMsg 	 	chan string
-	OutMsg  	chan string
+	Addr   Addr
+	name   string
+	InMsg  chan string
+	OutMsg chan string
 }
 
 func New(addr Addr, name string) *Client {
