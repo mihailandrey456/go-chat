@@ -31,7 +31,7 @@ func (b *Broadcaster) Serve() {
 			}
 		case cli := <-b.Entering:
 			cli.InMsg <- message.Msg{
-				From: "Server",
+				From:    "Server",
 				Content: fmt.Sprintf("В сети %d пользователей", len(clients)),
 			}
 			clients[cli.Addr] = cli

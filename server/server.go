@@ -2,10 +2,11 @@ package server
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"time"
-	"errors"
 
 	"andrewka/chat/broadcaster"
 	"andrewka/chat/client"
@@ -14,10 +15,16 @@ import (
 
 // обработать случай паники
 func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
+	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("Внутренняя ошибка: %v\n", p)
+		}
+	}()
 	defer conn.Close()
 
 	name, err := getClientName(conn)
 	if err != nil {
+		log.Println(err)
 		return
 	}
 	cli := client.New(client.Addr(conn.RemoteAddr().String()), name)
@@ -25,11 +32,11 @@ func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	go clientWriter(conn, cli)
 
 	cli.InMsg <- message.Msg{
-		From: "Server",
+		From:    "Server",
 		Content: "Вы " + cli.Fullname(),
 	}
 	bc.Messages <- message.Msg{
-		From: "Server",
+		From:    "Server",
 		Content: cli.Fullname() + " подключился",
 	}
 	bc.Entering <- cli
@@ -51,20 +58,26 @@ input:
 
 	bc.Leaving <- cli
 	bc.Messages <- message.Msg{
-		From: "Server",
+		From:    "Server",
 		Content: cli.Fullname() + " отключился",
 	}
 	cli.Close()
 }
 
-func getClientName(conn net.Conn) (string, error) {
+func getClientName(conn net.Conn) (name string, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("Внутренняя ошибка: %v\n", p)
+		}
+	}()
+
 	msg := message.Msg{
-		From: "Server",
+		From:    "Server",
 		Content: "Введите свое имя",
 	}
 	j, err := msg.Marshal()
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 	conn.Write(j)
 
@@ -78,25 +91,32 @@ func getClientName(conn net.Conn) (string, error) {
 		msg.Content = "Некорректное имя"
 		j, err := msg.Marshal()
 		if err != nil {
-			log.Fatal(err)
+			return "", err
 		}
 		conn.Write(j)
 	}
-	return "", errors.New("Не введен имя пользователя")
+	return "", errors.New("Не введено имя пользователя")
 }
 
 func clientReader(conn net.Conn, cli *client.Client, doneRead chan<- struct{}) {
+	defer func() { close(doneRead) }()
+
 	input := bufio.NewScanner(conn)
 	for input.Scan() {
 		cli.OutMsg <- message.Msg{
-			From: cli.Fullname(),
+			From:    cli.Fullname(),
 			Content: input.Text(),
 		}
 	}
-	close(doneRead)
 }
 
 func clientWriter(conn net.Conn, cli *client.Client) {
+	defer func() {
+		if p := recover(); p != nil {
+			log.Printf("Внутренняя ошибка: %v\n", p)
+		}
+	}()
+
 	for msg := range cli.InMsg {
 		j, err := msg.Marshal()
 		if err != nil {
