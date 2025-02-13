@@ -2,26 +2,36 @@ package server
 
 import (
 	"bufio"
-	"fmt"
 	"log"
 	"net"
 	"time"
+	"errors"
 
 	"andrewka/chat/broadcaster"
 	"andrewka/chat/client"
+	"andrewka/chat/message"
 )
 
 // обработать случай паники
 func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	defer conn.Close()
 
-	name := getClientName(conn)
+	name, err := getClientName(conn)
+	if err != nil {
+		return
+	}
 	cli := client.New(client.Addr(conn.RemoteAddr().String()), name)
 
 	go clientWriter(conn, cli)
 
-	cli.InMsg <- "Вы " + cli.Fullname()
-	bc.Messages <- "\n" + cli.Fullname() + " подключился"
+	cli.InMsg <- message.Msg{
+		From: "Server",
+		Content: "Вы " + cli.Fullname(),
+	}
+	bc.Messages <- message.Msg{
+		From: "Server",
+		Content: cli.Fullname() + " подключился",
+	}
 	bc.Entering <- cli
 
 	doneRead := make(chan struct{})
@@ -35,39 +45,65 @@ input:
 		case <-doneRead:
 			break input
 		case msg := <-cli.OutMsg:
-			bc.Messages <- "\n" + cli.Fullname() + ": " + msg
+			bc.Messages <- msg
 		}
 	}
 
 	bc.Leaving <- cli
-	bc.Messages <- "\n" + cli.Fullname() + " отключился"
+	bc.Messages <- message.Msg{
+		From: "Server",
+		Content: cli.Fullname() + " отключился",
+	}
 	cli.Close()
 }
 
-func getClientName(conn net.Conn) string {
-	fmt.Fprintf(conn, "Введите свое имя:\n> ")
+func getClientName(conn net.Conn) (string, error) {
+	msg := message.Msg{
+		From: "Server",
+		Content: "Введите свое имя",
+	}
+	j, err := msg.Marshal()
+	if err != nil {
+		log.Fatal(err)
+	}
+	conn.Write(j)
+
 	input := bufio.NewScanner(conn)
-	for {
-		input.Scan()
+	for input.Scan() {
 		name := input.Text()
 		if len(name) > 0 {
-			return name
+			return name, nil
 		}
-		fmt.Fprintf(conn, "Некорректное имя\n> ")
+
+		msg.Content = "Некорректное имя"
+		j, err := msg.Marshal()
+		if err != nil {
+			log.Fatal(err)
+		}
+		conn.Write(j)
 	}
+	return "", errors.New("Не введен имя пользователя")
 }
 
 func clientReader(conn net.Conn, cli *client.Client, doneRead chan<- struct{}) {
 	input := bufio.NewScanner(conn)
 	for input.Scan() {
-		cli.OutMsg <- input.Text()
+		cli.OutMsg <- message.Msg{
+			From: cli.Fullname(),
+			Content: input.Text(),
+		}
 	}
 	close(doneRead)
 }
 
 func clientWriter(conn net.Conn, cli *client.Client) {
 	for msg := range cli.InMsg {
-		fmt.Fprintln(conn, msg)
+		j, err := msg.Marshal()
+		if err != nil {
+			log.Println(err)
+		} else {
+			conn.Write(j)
+		}
 	}
 }
 

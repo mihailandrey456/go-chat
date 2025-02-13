@@ -1,20 +1,24 @@
 package client
 
+import (
+	"andrewka/chat/message"
+)
+
 type Addr string
 
 type Client struct {
 	Addr   Addr
 	name   string
-	InMsg  chan string
-	OutMsg chan string
+	InMsg  chan message.Msg
+	OutMsg chan message.Msg
 }
 
 func New(addr Addr, name string) *Client {
 	return &Client{
 		addr,
 		name,
-		make(chan string),
-		make(chan string),
+		make(chan message.Msg),
+		make(chan message.Msg),
 	}
 }
 
