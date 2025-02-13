@@ -17,7 +17,7 @@ func New(addr Addr, name string) *Client {
 	return &Client{
 		addr,
 		name,
-		make(chan message.Msg),
+		make(chan message.Msg, 1),
 		make(chan message.Msg),
 	}
 }

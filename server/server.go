@@ -29,7 +29,8 @@ func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	}
 	cli := client.New(client.Addr(conn.RemoteAddr().String()), name)
 
-	go clientWriter(conn, cli)
+	doneWrite := make(chan struct{})
+	go clientWriter(conn, cli, doneWrite)
 
 	cli.InMsg <- message.Msg{
 		From:    "Server",
@@ -50,6 +51,8 @@ input:
 		case <-time.After(5 * time.Minute):
 			break input
 		case <-doneRead:
+			break input
+		case <-doneWrite:
 			break input
 		case msg := <-cli.OutMsg:
 			bc.Messages <- msg
@@ -99,7 +102,12 @@ func getClientName(conn net.Conn) (name string, err error) {
 }
 
 func clientReader(conn net.Conn, cli *client.Client, doneRead chan<- struct{}) {
-	defer func() { close(doneRead) }()
+	defer func() {
+		close(doneRead)
+		if p := recover(); p != nil {
+			log.Printf("Внутренняя ошибка: %v\n", p)
+		}
+	}()
 
 	input := bufio.NewScanner(conn)
 	for input.Scan() {
@@ -110,8 +118,9 @@ func clientReader(conn net.Conn, cli *client.Client, doneRead chan<- struct{}) {
 	}
 }
 
-func clientWriter(conn net.Conn, cli *client.Client) {
+func clientWriter(conn net.Conn, cli *client.Client, doneWrite chan<- struct{}) {
 	defer func() {
+		close(doneWrite)
 		if p := recover(); p != nil {
 			log.Printf("Внутренняя ошибка: %v\n", p)
 		}
