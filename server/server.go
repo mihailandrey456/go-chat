@@ -13,46 +13,60 @@ import (
 	"andrewka/chat/message"
 )
 
+type connHandler struct {
+	conn net.Conn
+	bc   *broadcaster.Broadcaster
+	done chan struct{}
+}
+
+func newConnHandler(conn net.Conn, bc *broadcaster.Broadcaster) *connHandler {
+	return &connHandler{
+		conn,
+		bc,
+		make(chan struct{}, 1),
+	}
+}
+
 func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	defer func() {
 		if p := recover(); p != nil {
 			log.Printf("Внутренняя ошибка: %v\n", p)
 		}
 	}()
-	defer conn.Close()
 
-	done := make(chan struct{}, 2)
+	h := newConnHandler(conn, bc)
+	defer h.conn.Close()
 
-	name, err := getClientName(conn)
+	name, err := h.readClientName()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	cli := client.New(client.Addr(conn.RemoteAddr().String()), name)
+	cli := client.New(client.Addr(h.conn.RemoteAddr().String()), name)
 
-	go clientWriter(conn, cli, done)
+	go h.clientWriter(cli)
 
 	cli.InMsg <- message.Msg{
 		From:    "Server",
 		Content: "Вы " + cli.Fullname(),
 	}
-	bc.Messages <- message.Msg{
+	h.bc.Messages <- message.Msg{
 		From:    "Server",
 		Content: cli.Fullname() + " подключился",
 	}
-	bc.Entering <- cli
+	h.bc.Entering <- cli
 
-	clientReader(conn, bc, cli, done)
+	h.clientReader(cli)
 
-	bc.Leaving <- cli
-	bc.Messages <- message.Msg{
+	h.bc.Leaving <- cli
+	h.bc.Messages <- message.Msg{
 		From:    "Server",
 		Content: cli.Fullname() + " отключился",
 	}
 	cli.Close()
 }
 
-func getClientName(conn net.Conn) (name string, err error) {
+func (h *connHandler) readClientName() (name string, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("Внутренняя ошибка: %v\n", p)
@@ -67,9 +81,9 @@ func getClientName(conn net.Conn) (name string, err error) {
 	if err != nil {
 		return "", err
 	}
-	conn.Write(j)
+	h.conn.Write(j)
 
-	input := bufio.NewScanner(conn)
+	input := bufio.NewScanner(h.conn)
 	for input.Scan() {
 		name := input.Text()
 		if len(name) > 0 {
@@ -81,39 +95,35 @@ func getClientName(conn net.Conn) (name string, err error) {
 		if err != nil {
 			return "", err
 		}
-		conn.Write(j)
+		h.conn.Write(j)
 	}
 	return "", errors.New("Не введено имя пользователя")
 }
 
-func clientReader(conn net.Conn, bc *broadcaster.Broadcaster, cli *client.Client, done chan struct{}) {
-	go readClientInput(conn, cli, done)
+func (h *connHandler) clientReader(cli *client.Client) {
+	go h.readClientInput(cli)
 
 	for {
-		// утечка горутинов??
-		go func() {
-			<-time.After(5 * time.Minute)
-			done <- struct{}{}
-		}()
-
 		select {
-		case <-done:
+		case <-time.After(5 * time.Minute):
+			return
+		case <-h.done:
 			return
 		case msg := <-cli.OutMsg:
-			bc.Messages <- msg
+			h.bc.Messages <- msg
 		}
 	}
 }
 
-func readClientInput(conn net.Conn, cli *client.Client, done chan<- struct{}) {
+func (h *connHandler) readClientInput(cli *client.Client) {
 	defer func() {
-		done <- struct{}{}
+		h.done <- struct{}{}
 		if p := recover(); p != nil {
 			log.Printf("Внутренняя ошибка: %v\n", p)
 		}
 	}()
 
-	input := bufio.NewScanner(conn)
+	input := bufio.NewScanner(h.conn)
 	for input.Scan() {
 		cli.OutMsg <- message.Msg{
 			From:    cli.Fullname(),
@@ -122,9 +132,9 @@ func readClientInput(conn net.Conn, cli *client.Client, done chan<- struct{}) {
 	}
 }
 
-func clientWriter(conn net.Conn, cli *client.Client, done chan<- struct{}) {
+func (h *connHandler) clientWriter(cli *client.Client) {
 	defer func() {
-		done <- struct{}{}
+		h.done <- struct{}{}
 		if p := recover(); p != nil {
 			log.Printf("Внутренняя ошибка: %v\n", p)
 		}
@@ -135,7 +145,7 @@ func clientWriter(conn net.Conn, cli *client.Client, done chan<- struct{}) {
 		if err != nil {
 			log.Println(err)
 		} else {
-			conn.Write(j)
+			h.conn.Write(j)
 		}
 	}
 }
