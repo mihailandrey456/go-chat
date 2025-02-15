@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 )
 
+const (
+	HistorySize = 100
+)
+
 type Msg struct {
 	From    string
 	Content string
