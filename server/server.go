@@ -150,12 +150,12 @@ func (h *connHandler) clientWriter(cli *client.Client) {
 	}
 }
 
-func Run() {
-	listener, err := net.Listen("tcp", "localhost:8000")
+func Run(port uint) {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Сервер прослушивает localhost:8000")
+	log.Printf("Сервер прослушивает localhost:%d\n", port)
 
 	b := broadcaster.New()
 	go b.Serve()

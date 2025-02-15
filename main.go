@@ -2,8 +2,12 @@ package main
 
 import (
 	"andrewka/chat/server"
+	"flag"
 )
 
+var port = flag.Uint("port", 8000, "listen port")
+
 func main() {
-	server.Run()
+	flag.Parse()
+	server.Run(*port)
 }
