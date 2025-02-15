@@ -13,7 +13,6 @@ import (
 	"andrewka/chat/message"
 )
 
-// обработать случай паники
 func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -22,6 +21,8 @@ func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	}()
 	defer conn.Close()
 
+	done := make(chan struct{}, 2)
+
 	name, err := getClientName(conn)
 	if err != nil {
 		log.Println(err)
@@ -29,8 +30,7 @@ func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	}
 	cli := client.New(client.Addr(conn.RemoteAddr().String()), name)
 
-	doneWrite := make(chan struct{})
-	go clientWriter(conn, cli, doneWrite)
+	go clientWriter(conn, cli, done)
 
 	cli.InMsg <- message.Msg{
 		From:    "Server",
@@ -42,22 +42,7 @@ func handleConn(conn net.Conn, bc *broadcaster.Broadcaster) {
 	}
 	bc.Entering <- cli
 
-	doneRead := make(chan struct{})
-	go clientReader(conn, cli, doneRead)
-
-input:
-	for {
-		select {
-		case <-time.After(5 * time.Minute):
-			break input
-		case <-doneRead:
-			break input
-		case <-doneWrite:
-			break input
-		case msg := <-cli.OutMsg:
-			bc.Messages <- msg
-		}
-	}
+	clientReader(conn, bc, cli, done)
 
 	bc.Leaving <- cli
 	bc.Messages <- message.Msg{
@@ -101,9 +86,28 @@ func getClientName(conn net.Conn) (name string, err error) {
 	return "", errors.New("Не введено имя пользователя")
 }
 
-func clientReader(conn net.Conn, cli *client.Client, doneRead chan<- struct{}) {
+func clientReader(conn net.Conn, bc *broadcaster.Broadcaster, cli *client.Client, done chan struct{}) {
+	go readClientInput(conn, cli, done)
+
+	for {
+		// утечка горутинов??
+		go func() {
+			<-time.After(5 * time.Minute)
+			done <- struct{}{}
+		}()
+
+		select {
+		case <-done:
+			return
+		case msg := <-cli.OutMsg:
+			bc.Messages <- msg
+		}
+	}
+}
+
+func readClientInput(conn net.Conn, cli *client.Client, done chan<- struct{}) {
 	defer func() {
-		close(doneRead)
+		done <- struct{}{}
 		if p := recover(); p != nil {
 			log.Printf("Внутренняя ошибка: %v\n", p)
 		}
@@ -118,9 +122,9 @@ func clientReader(conn net.Conn, cli *client.Client, doneRead chan<- struct{}) {
 	}
 }
 
-func clientWriter(conn net.Conn, cli *client.Client, doneWrite chan<- struct{}) {
+func clientWriter(conn net.Conn, cli *client.Client, done chan<- struct{}) {
 	defer func() {
-		close(doneWrite)
+		done <- struct{}{}
 		if p := recover(); p != nil {
 			log.Printf("Внутренняя ошибка: %v\n", p)
 		}
