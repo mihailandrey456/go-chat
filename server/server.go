@@ -1,16 +1,16 @@
 package server
 
 import (
+	"andrewka/chat/broadcaster"
+	"andrewka/chat/client"
+	"andrewka/chat/message"
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"time"
-
-	"andrewka/chat/broadcaster"
-	"andrewka/chat/client"
-	"andrewka/chat/message"
 )
 
 type connHandler struct {
@@ -150,8 +150,8 @@ func (h *connHandler) clientWriter(cli *client.Client) {
 	}
 }
 
-func Run(port uint) {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func Run(port uint, useTLS bool) {
+	listener, err := newListener(port, useTLS)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -168,4 +168,18 @@ func Run(port uint) {
 		}
 		go handleConn(conn, b)
 	}
+}
+
+func newListener(port uint, useTLS bool) (net.Listener, error) {
+	addr := fmt.Sprintf(":%d", port)
+	if !useTLS {
+		return net.Listen("tcp", addr)
+	}
+
+	cert, err := tls.LoadX509KeyPair("/path/to/cert", "/path/to/cert-key")
+	if err != nil {
+		return nil, err
+	}
+	config := tls.Config{Certificates: []tls.Certificate{cert}}
+	return tls.Listen("tcp", addr, &config)
 }
