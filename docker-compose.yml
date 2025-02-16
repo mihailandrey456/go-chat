@@ -1,0 +1,8 @@
+services:
+  chat:
+    image: go-chat:latest
+    build: ./
+    command: /chat -port=${CHAT_PORT}
+    restart: always
+    ports:
+      - ${CHAT_PORT}:${CHAT_PORT}
