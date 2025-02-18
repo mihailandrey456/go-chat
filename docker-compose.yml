@@ -2,7 +2,10 @@ services:
   chat:
     image: go-chat:latest
     build: ./
-    command: /chat -port=${CHAT_PORT}
+    command: /chat -port=${CHAT_PORT} -cert-file=${PUBLIC_CERT_KEY_PATH} -key-file=${PRIVATE_CERT_KEY_PATH}
     restart: always
     ports:
       - ${CHAT_PORT}:${CHAT_PORT}
+    volumes:
+      - ${HOST_PUBLIC_CERT_KEY_PATH}:${PUBLIC_CERT_KEY_PATH}:ro
+      - ${HOST_PRIVATE_CERT_KEY_PATH}:${PRIVATE_CERT_KEY_PATH}:ro
